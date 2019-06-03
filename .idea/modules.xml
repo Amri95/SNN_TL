@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="ProjectModuleManager">
+    <modules>
+      <module fileurl="file://$PROJECT_DIR$/.idea/BP-for-SpikingNN-master.iml" filepath="$PROJECT_DIR$/.idea/BP-for-SpikingNN-master.iml" />
+      <module fileurl="file://$PROJECT_DIR$/../DDC Net/.idea/DDC Net.iml" filepath="$PROJECT_DIR$/../DDC Net/.idea/DDC Net.iml" />
+      <module fileurl="file://$PROJECT_DIR$/../im2recipe-Pytorch-master/.idea/im2recipe-Pytorch-master.iml" filepath="$PROJECT_DIR$/../im2recipe-Pytorch-master/.idea/im2recipe-Pytorch-master.iml" />
+      <module fileurl="file://$PROJECT_DIR$/../deep_snn_cnn/.idea/slayer_pytorch.iml" filepath="$PROJECT_DIR$/../deep_snn_cnn/.idea/slayer_pytorch.iml" />
+    </modules>
+  </component>
+</project>

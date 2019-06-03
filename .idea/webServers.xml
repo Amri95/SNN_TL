@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="WebServers">
+    <option name="servers">
+      <webServer id="b78aef9f-eea6-443a-9323-a4c6489efd56" name="zs002_snn_tl" url="http://210.38.224.102">
+        <fileTransfer host="210.38.224.102" port="22" rootFolder="/home/zsc" accessType="SFTP">
+          <advancedOptions>
+            <advancedOptions dataProtectionLevel="Private" passiveMode="true" shareSSLContext="true" />
+          </advancedOptions>
+          <option name="port" value="22" />
+        </fileTransfer>
+      </webServer>
+      <webServer id="0de70922-692b-4799-b7eb-623c863ac339" name="zs002_recipe" url="http://210.38.224.102">
+        <fileTransfer host="210.38.224.102" port="22" rootFolder="/home/zsc" accessType="SFTP">
+          <advancedOptions>
+            <advancedOptions dataProtectionLevel="Private" passiveMode="true" shareSSLContext="true" />
+          </advancedOptions>
+          <option name="port" value="22" />
+        </fileTransfer>
+      </webServer>
+    </option>
+  </component>
+</project>
