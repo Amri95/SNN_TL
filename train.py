@@ -9,6 +9,7 @@ from __future__ import print_function
 import math
 import cv2
 import dataloader
+import CKA
 
 import torch
 from torch import optim
@@ -26,7 +27,7 @@ args = parser.parse_args()
 # device set
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 cuda = torch.cuda.is_available()
-if cuda:
+if cuda:  # 使用GPU的情况下，默认多GPU并行
     device_num = torch.cuda.device_count()
     snn = torch.nn.DataParallel(SDDC(), device_ids=list(range(device_num)))
 else:
@@ -49,7 +50,12 @@ loss_train_record = list([])
 loss_test_record = list([])
 
 criterion = nn.MSELoss()
-optimizer = torch.optim.Adam(snn.parameters(), lr=args.learning_rate)
+
+# 所设计的可用于mmd的loss合集
+criterion_dict = {"linear_CKA": CKA.linear_CKA,
+                  "KL": torch.nn.KLDivLoss()}
+mmd_criterion = criterion_dict[args.mmd_function]
+optimizer = torch.optim.RMSprop(snn.parameters(), lr=args.learning_rate)
 
 
 # get laplace image from resize image
@@ -66,6 +72,7 @@ def get_lap(tensor_data):
     return torch.cat(out, 0)
 
 
+# 动态调整学习率， 未使用
 def step_decay(epoch, learning_rate):
     """
     learning rate step decay
@@ -80,6 +87,7 @@ def step_decay(epoch, learning_rate):
     return lrate
 
 
+# 绘制网络结构图
 def make_dot(var, params=None):
     """ Produces Graphviz representation of PyTorch autograd graph
     Blue nodes are the Variables that require grad, orange are Tensors
@@ -88,6 +96,9 @@ def make_dot(var, params=None):
         var: output Variable
         params: dict of (name, Variable) to add names to node that
             require grad (TODO: make optional)
+    example：
+         g = make_dot(mmd_loss)
+         g.render('tl-graph_1.gv')
     """
     if params is not None:
         assert isinstance(params.values()[0], Variable)
@@ -103,7 +114,7 @@ def make_dot(var, params=None):
     seen = set()
 
     def size_to_str(size):
-        return '(' + (', ').join(['%d' % v for v in size]) + ')'
+        return '(' + ', '.join(['%d' % v for v in size]) + ')'
 
     def add_nodes(var):
         if var not in seen:
@@ -131,26 +142,16 @@ def make_dot(var, params=None):
     return dot
 
 
-def train_ddcnet(epoch, model, learning_rate, source_loader, target_loader):
+def train_ddcnet(epoch, model, source_loader, target_loader):
     """
     train source and target domain on ddcnet
     :param epoch: current training epoch
     :param model: defined ddcnet
-    :param learning_rate: initial learning rate
     :param source_loader: source loader
     :param target_loader: target train loader
     :return:
     """
     log_interval = 10
-    # LEARNING_RATE = step_decay(epoch, learning_rate)
-    # print('Learning Rate: ', LEARNING_RATE)
-    # optimizer = optim.SGD([
-    #     # {'params': model.features.parameters()},
-    #     # {'params': model.classifier.parameters()},
-    #     # {'params': model.bottleneck.parameters(), 'lr': LEARNING_RATE},
-    #     # {'params': model.final_classifier.parameters(), 'lr': LEARNING_RATE},
-    #     {'params': model.parameters(), 'lr': LEARNING_RATE}
-    # ], lr=LEARNING_RATE / 10, momentum=momentum, weight_decay=l2_decay)
 
     # enter training mode
     model.train()
@@ -162,37 +163,45 @@ def train_ddcnet(epoch, model, learning_rate, source_loader, target_loader):
     correct = 0
     total_loss = 0
 
-    for i in range(1, num_iter):
+    for i in range(num_iter):
         source_data, source_label = iter_source.next()
         target_data, _ = iter_target.next()
 
+        # 得到拉普拉斯边缘
         source_lap = get_lap(source_data)
         target_lap = get_lap(target_data)
 
-        if i % len(target_loader) == 0:
+        # 若target数据不够，则重新循环添加
+        if (i + 1) % len(target_loader) == 0:
             iter_target = iter(target_loader)
         if cuda:
             source_data, source_lap, source_label = source_data.cuda(), source_lap.cuda(), source_label.cuda()
             target_data, target_lap = target_data.cuda(), target_lap.cuda()
 
-        source_data, source_lap, source_label = Variable(source_data), Variable(source_lap), Variable(source_label)
-        target_data, target_lap = Variable(target_data), Variable(target_lap)
+        # source_data, source_lap, source_label = Variable(source_data), Variable(source_lap), Variable(source_label)
+        # target_data, target_lap = Variable(target_data), Variable(target_lap)
 
         model.zero_grad()
         optimizer.zero_grad()
 
-        source_preds, mmd_loss = model(source_data, source_lap, target_data, target_lap, epoch, i)
-        # g = make_dot(mmd_loss)
-        # g.render('tl-graph_1.gv')
+        source_preds, source_feature, target_feature = model(source_data, source_lap, target_data, target_lap, epoch, i)
+
+        # CKA计算的是相似度，作为loss的话需要用1减去
+        if args.mmd_function == "linear_CKA":
+            mmd_loss = 1 - torch.abs(mmd_criterion(source_feature, target_feature))
+            # mmd_loss = 1 - torch.abs(mmd_criterion(source_feature.detach(), target_feature.detach()))
+        else:
+            mmd_loss = torch.abs(mmd_criterion(source_feature.detach(), target_feature.detach()))
+
+        # 将label从(batch_size, 1) 变为 (batch_size, num_classes)即one-hot，便于计算loss
         source_label_ = torch.zeros(batch_size, args.num_classes).cuda().scatter_(1, source_label.view(-1, 1), 1)
-        _, predicted = source_preds.max(1)
+        _, predicted = source_preds.max(1)  # 返回的predicated为(batch_size, 1)直接得到值最大的类别的index，便于下面计算正确率
         correct += float(predicted.eq(source_label).sum().item())
 
-        clf_loss = criterion(source_preds, source_label_)  # clf_criterion(source_preds, source_label)
+        clf_loss = criterion(source_preds, source_label_)  # 计算分类loss
 
-        mmd_loss = mmd_loss.sum() / device_num
-        loss = (clf_loss + 0.25 * mmd_loss).sum()
-        total_loss += clf_loss.item()
+        loss = clf_loss + args.mmd_ratio * mmd_loss  # 合并分类loss和mmd loss
+        total_loss += clf_loss.item()  # 单纯累加所有分类loss的数值
 
         loss.backward()
 
@@ -201,13 +210,13 @@ def train_ddcnet(epoch, model, learning_rate, source_loader, target_loader):
         if i % log_interval == 4:
             print('Train Epoch {}: [{}/{} ({:.0f}%)]\tLoss: {:.6f}\tsoft_Loss: {:.6f}\tmmd_Loss: {:.6f}'.format(
                 epoch, i * len(source_data), len(source_loader) * batch_size,
-                100. * i / len(source_loader), loss, clf_loss.item(), mmd_loss.item()))
+                100. * i * len(source_data) / (len(source_loader) * batch_size), loss, clf_loss.item(), mmd_loss.item()))
 
     total_loss /= len(source_loader)
     acc_train = float(correct) * 100. / (len(source_loader) * batch_size)
 
     print('{} set: Average classification loss: {:.4f}, Accuracy: {}/{} ({:.2f}%)'.format(
-        args.SOURCE_NAME, total_loss, correct, len(source_loader.dataset), acc_train))
+        args.SOURCE_NAME, total_loss, correct, len(source_loader) * batch_size, acc_train))
 
 
 def test_ddcnet(model, target_loader):
@@ -227,8 +236,8 @@ def test_ddcnet(model, target_loader):
 
         if cuda:
             data, data_lap, target = data.cuda(), data_lap.cuda(), target.cuda()
-        data, data_lap, target = Variable(data), Variable(data_lap), Variable(target)
-        target_preds, _ = model(data, data_lap, data, data_lap, 0, 0)
+        # data, data_lap, target = Variable(data), Variable(data_lap), Variable(target)
+        target_preds, _1, _2 = model(data, data_lap, data, data_lap, 0, 0)
 
         _, predicted = target_preds.max(1)
         correct += float(predicted.eq(target).sum().item())
@@ -236,15 +245,10 @@ def test_ddcnet(model, target_loader):
         target_ = torch.zeros(batch_size, args.num_classes).cuda().scatter_(1, target.view(-1, 1), 1)
         test_loss += criterion(target_preds, target_)  # sum up batch loss
 
-        # test_loss += clf_criterion(target_preds, target)  # sum up batch loss
-        # pred = target_preds.data.max(1)[1]  # get the index of the max log-probability
-        # correct += pred.eq(target.data.view_as(pred)).cpu().sum()
-
     test_loss /= len(target_loader)
     print('{} set: Average classification loss: {:.4f}, Accuracy: {}/{} ({:.2f}%)'.format(
-        args.TARGET_NAME, test_loss.item(), correct, len(target_loader.dataset),
-        # TARGET_NAME, test_loss.data[0], correct, len(target_loader.dataset),
-        100. * correct / len(target_loader.dataset)))
+        args.TARGET_NAME, test_loss.item(), correct, len(target_loader) * batch_size,
+        100. * correct / (len(target_loader) * batch_size)))
 
     return correct
 
@@ -252,7 +256,7 @@ def test_ddcnet(model, target_loader):
 if __name__ == '__main__':
     for epoch in range(1, args.num_epochs + 1):
         print('Train Epoch: ', epoch)
-        train_ddcnet(epoch, snn, args.learning_rate, source_loader, target_train_loader)
+        train_ddcnet(epoch, snn, source_loader, target_train_loader)
         with torch.no_grad():
             correct = test_ddcnet(snn, target_test_loader)
             # acc_record.append(correct)

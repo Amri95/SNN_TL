@@ -10,49 +10,68 @@ Python 3.5.2
 
 from __future__ import print_function
 import math
+import cv2
+import dataloader
+import CKA
+
 import torch
 from torch import optim
 import torch.nn as nn
 from torch.autograd import Variable
-import torchvision
 import torchvision.transforms as transforms
-import dataloader
-import os
-import time
+
 from spiking_model import*
 from graphviz import Digraph
+from args import get_parser
 
+parser = get_parser()
+args = parser.parse_args()
 
-# os.environ['CUDA_VISIBLE_DEVICES'] = "3"
-names = 'transfer_spiking_model'
-ROOT_PATH = './data/Office31'
-SOURCE_NAME = 'amazon'
-TARGET_NAME = 'webcam'
-
-device_ids = [0, 1, 2, 3]
-batch_size = base_batch_size * len(device_ids)
-
-# source_loader = dataloader.load_training(ROOT_PATH, SOURCE_NAME, batch_size)
-# target_train_loader = dataloader.load_training(ROOT_PATH, TARGET_NAME, batch_size)
-# target_test_loader = dataloader.load_testing(ROOT_PATH, TARGET_NAME, batch_size)
-
-source_loader, target_test_loader = dataloader.load_data(ROOT_PATH, SOURCE_NAME, batch_size)
-target_train_loader = dataloader.load_training(ROOT_PATH, TARGET_NAME, batch_size)
-
+# device set
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 cuda = torch.cuda.is_available()
+if cuda:
+    device_num = torch.cuda.device_count()
+    snn = torch.nn.DataParallel(SDDC(), device_ids=list(range(device_num)))
+else:
+    device_num = 1
+    snn = SDDC()
 
+snn.to(device)
+batch_size = args.base_batch_size * device_num
+
+# data loader set
+source_loader, target_test_loader = dataloader.load_data(args.ROOT_PATH, args.SOURCE_NAME, batch_size)
+target_train_loader = dataloader.load_training(args.ROOT_PATH, args.TARGET_NAME, batch_size)
+
+
+# train prepare
 best_acc = 0  # best test accuracy
 start_epoch = 0  # start from epoch 0 or last checkpoint epoch
 acc_record = list([])
 loss_train_record = list([])
 loss_test_record = list([])
 
-snn = torch.nn.DataParallel(SDDC(), device_ids)
-# snn = SDDC()
-snn.to(device)
 criterion = nn.MSELoss()
-optimizer = torch.optim.Adam(snn.parameters(), lr=learning_rate, weight_decay=l2_decay)
+
+criterion_dict = {"linear_CKA": CKA.linear_CKA,
+                  "KL": torch.nn.KLDivLoss()}
+mmd_criterion = criterion_dict[args.mmd_function]
+optimizer = torch.optim.Adam(snn.parameters(), lr=args.learning_rate)
+
+
+# get laplace image from resize image
+def get_lap(tensor_data):
+    shape = tensor_data.size()
+    out = []
+    for i in range(shape[0]):
+        img = transforms.ToPILImage()(tensor_data[i]).convert('RGB')
+        cv_img = cv2.cvtColor(np.asarray(img), cv2.COLOR_RGB2GRAY)
+        cv_img_lap = cv2.Laplacian(cv_img, cv2.CV_8U, ksize=args.laplace_size)
+        tensor_out = transforms.ToTensor()(cv_img_lap)
+        tensor_out = tensor_out.reshape((1, 1, shape[2], shape[3]))
+        out.append(tensor_out)
+    return torch.cat(out, 0)
 
 
 def calculate_error_classification(spikes, des_spikes):
@@ -162,75 +181,50 @@ def train_ddcnet(epoch, model, learning_rate, source_loader, target_loader):
 
     for i in range(1, num_iter):
         source_data, source_label = iter_source.next()
-
         target_data, _ = iter_target.next()
+
+        source_lap = get_lap(source_data)
+        target_lap = get_lap(target_data)
+
         if i % len(target_loader) == 0:
             iter_target = iter(target_loader)
         if cuda:
-            source_data, source_label = source_data.cuda(), source_label.cuda()
-            target_data = target_data.cuda()
+            source_data, source_lap, source_label = source_data.cuda(), source_lap.cuda(), source_label.cuda()
+            target_data, target_lap = target_data.cuda(), target_lap.cuda()
 
-        source_data, source_label = Variable(source_data), Variable(source_label)
-        target_data = Variable(target_data)
+        source_data, source_lap, source_label = Variable(source_data), Variable(source_lap), Variable(source_label)
+        target_data, target_lap = Variable(target_data), Variable(target_lap)
 
         model.zero_grad()
         optimizer.zero_grad()
 
-        source_preds, mmd_loss = model(source_data, target_data)
-        # print(mmd_loss)
-        # g = make_dot(mmd_loss)
-        # g.render('tl-graph_1.gv')
-        # break
-        # print(source_label)
-        source_label_ = torch.zeros(batch_size, num_classes).cuda().scatter_(1, source_label.view(-1, 1), 1)
-        # print(source_label_)
+        # source_preds, mmd_loss = model(source_data, source_lap, target_data, target_lap, epoch, i)
+        source_preds, source_feature, target_feature = model(source_data, source_lap, target_data, target_lap, epoch, i)
+        mmd_loss = torch.abs(mmd_criterion(source_feature.detach(), target_feature.detach()))
+
+        source_label_ = torch.zeros(batch_size, args.num_classes).cuda().scatter_(1, source_label.view(-1, 1), 1)
         _, predicted = source_preds.max(1)
         correct += float(predicted.eq(source_label).sum().item())
 
-        # preds = source_preds.data.max(1, keepdim=True)[1]
-        # correct += preds.eq(source_label.data.view_as(preds)).sum()
-
-        # print(source_preds.shape, source_label_.shape)
-
-        # clf_loss = calculate_l2_loss_classification(source_preds, source_label_)
         clf_loss = criterion(source_preds, source_label_)  # clf_criterion(source_preds, source_label)
-        # print(clf_loss)
-        # clf_loss.backward()
-        loss = clf_loss  # + 0.25 * mmd_loss
+
+        loss = clf_loss
         total_loss += clf_loss.item()
 
-        # print("source_data.requires_grad:")
-        # print(source_data.requires_grad)  # False
-        # print("the grad of source_data:")
-        # print(source_data.grad)  # None
-        # print("targete_data.requires_grad:")
-        # print(target_data.requires_grad)  # False
-        # print("the grad of target_data:")
-        # print(target_data.grad)  # None
-        loss.backward()  # retain_graph=True)
-        # print("the grad of net:")
-        # print(model.conv0.bias.grad)  # no-None
-        # print("source_data.requires_grad:")
-        # print(source_data.requires_grad)  # False
-        # print("the grad of source_data:")
-        # print(source_data.grad)  # None
-        # print("targete_data.requires_grad:")
-        # print(target_data.requires_grad)  # False
-        # print("the grad of target_data:")
-        # print(target_data.grad)  # None
+        loss.backward()
 
         optimizer.step()
 
         if i % log_interval == 4:
             print('Train Epoch {}: [{}/{} ({:.0f}%)]\tLoss: {:.6f}\tsoft_Loss: {:.6f}\tmmd_Loss: {:.6f}'.format(
                 epoch, i * len(source_data), len(source_loader) * batch_size,
-                100. * i / len(source_loader), loss, clf_loss.item(), mmd_loss.item()))
+                       100. * i / len(source_loader), loss, clf_loss.item(), mmd_loss.item()))
 
     total_loss /= len(source_loader)
     acc_train = float(correct) * 100. / (len(source_loader) * batch_size)
 
     print('{} set: Average classification loss: {:.4f}, Accuracy: {}/{} ({:.2f}%)'.format(
-        SOURCE_NAME, total_loss, correct, len(source_loader.dataset), acc_train))
+        args.SOURCE_NAME, total_loss, correct, len(source_loader.dataset), acc_train))
 
 
 def test_ddcnet(model, target_loader):
@@ -246,16 +240,17 @@ def test_ddcnet(model, target_loader):
     correct = 0
 
     for data, target in target_test_loader:
+        data_lap = get_lap(data)  # > torch.ones((1, 227, 227), device=device) * 0.3
 
         if cuda:
-            data, target = data.cuda(), target.cuda()
-        data, target = Variable(data), Variable(target)
-        target_preds, _ = model(data, data)
+            data, data_lap, target = data.cuda(), data_lap.cuda(), target.cuda()
+        data, data_lap, target = Variable(data), Variable(data_lap), Variable(target)
+        target_preds, _1, _2 = model(data, data_lap, data, data_lap, 0, 0)
 
         _, predicted = target_preds.max(1)
         correct += float(predicted.eq(target).sum().item())
 
-        target_ = torch.zeros(batch_size, num_classes).cuda().scatter_(1, target.view(-1, 1), 1)
+        target_ = torch.zeros(batch_size, args.num_classes).cuda().scatter_(1, target.view(-1, 1), 1)
         test_loss += criterion(target_preds, target_)  # sum up batch loss
 
         # test_loss += clf_criterion(target_preds, target)  # sum up batch loss
@@ -264,7 +259,7 @@ def test_ddcnet(model, target_loader):
 
     test_loss /= len(target_loader)
     print('{} set: Average classification loss: {:.4f}, Accuracy: {}/{} ({:.2f}%)'.format(
-        TARGET_NAME, test_loss.item(), correct, len(target_loader.dataset),
+        args.TARGET_NAME, test_loss.item(), correct, len(target_loader.dataset),
         # TARGET_NAME, test_loss.data[0], correct, len(target_loader.dataset),
         100. * correct / len(target_loader.dataset)))
 
@@ -272,9 +267,9 @@ def test_ddcnet(model, target_loader):
 
 
 if __name__ == '__main__':
-    for epoch in range(1, num_epochs + 1):
+    for epoch in range(1, args.num_epochs + 1):
         print('Train Epoch: ', epoch)
-        train_ddcnet(epoch, snn, learning_rate, source_loader, target_train_loader)
+        train_ddcnet(epoch, snn, args.learning_rate, source_loader, target_train_loader)
         with torch.no_grad():
             correct = test_ddcnet(snn, target_test_loader)
             # acc_record.append(correct)
@@ -289,5 +284,5 @@ if __name__ == '__main__':
             #     }
             #     if not os.path.isdir('checkpoint'):
             #         os.mkdir('checkpoint')
-            #     torch.save(state, './checkpoint/ckpt' + names + '.t7')
+            #     torch.save(state, './checkpoint/ckpt' + args.names + '.t7')
             #     best_acc = correct

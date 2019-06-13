@@ -22,7 +22,7 @@ def get_parser():
     # model
     parser.add_argument('--thresh', default=0.5, type=float, help='neuronal threshold')
     parser.add_argument('--lens', default=0.5, type=float, help='hyper-parameters of approximate function')
-    parser.add_argument('--decay', default=0.2, type=float, help='decay constants')
+    parser.add_argument('--decay', default=0.5, type=float, help='decay constants')
     parser.add_argument('--time_window', default=20, type=int, help='the time step of SNN')
 
     # laplace
@@ -32,9 +32,13 @@ def get_parser():
     parser.add_argument('--original_ratio', default=0.1, type=float, help='the ratio of original spike')
 
     # mmd loss
+    parser.add_argument('-F', '--mmd_function', default="KL", type=str, help='the loss function of mmd')
     parser.add_argument('-R', '--mmd_ratio', default=0.25, type=float, help='the ratio of mmd loss')
     parser.add_argument('-L', '--mmd_level', default=8, choices=[6, 7, 8], type=int,
                         help='the level of mmd loss in the structure')
+
+    # psp
+    parser.add_argument('-P', '--psp', default=0, type=int, help='use psp or not')
 
     return parser
 

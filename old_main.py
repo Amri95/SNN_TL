@@ -14,15 +14,21 @@ import os
 import time
 from spiking_model import*
 from graphviz import Digraph
+
+from args import get_parser
+
+parser = get_parser()
+args = parser.parse_args()
+
 # os.environ['CUDA_VISIBLE_DEVICES'] = "3"
 names = 'spiking_model'
 data_path =  './data/raw/' #todo: input your data path
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 train_dataset = torchvision.datasets.MNIST(root= data_path, train=True, download=True, transform=transforms.ToTensor())
-train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=0)
+train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=args.base_batch_size, shuffle=True, num_workers=0)
 
 test_set = torchvision.datasets.MNIST(root= data_path, train=False, download=True,  transform=transforms.ToTensor())
-test_loader = torch.utils.data.DataLoader(test_set, batch_size=batch_size, shuffle=False, num_workers=0)
+test_loader = torch.utils.data.DataLoader(test_set, batch_size=args.base_batch_size, shuffle=False, num_workers=0)
 
 best_acc = 0  # best test accuracy
 start_epoch = 0  # start from epoch 0 or last checkpoint epoch
@@ -33,7 +39,7 @@ loss_test_record = list([])
 snn = OldSCNN()
 snn.to(device)
 criterion = nn.MSELoss()
-optimizer = torch.optim.Adam(snn.parameters(), lr=learning_rate)
+optimizer = torch.optim.Adam(snn.parameters(), lr=args.learning_rate)
 
 
 def make_dot(var, params=None):
@@ -87,7 +93,7 @@ def make_dot(var, params=None):
     return dot
 
 
-for epoch in range(num_epochs):
+for epoch in range(args.num_epochs):
     running_loss = 0
     start_time = time.time()
     for i, (images, labels) in enumerate(train_loader):
@@ -96,28 +102,31 @@ for epoch in range(num_epochs):
 
         images = images.float().to(device)
         outputs = snn(images)
+        # print("outputs is: ", outputs)
         # g = make_dot(outputs)
         # g.render('old_train.gv')
-        labels_ = torch.zeros(batch_size, 10).scatter_(1, labels.view(-1, 1), 1)
+        labels_ = torch.zeros(args.base_batch_size, 10).scatter_(1, labels.view(-1, 1), 1)
         loss = criterion(outputs.cpu(), labels_)
         running_loss += loss.item()
+        # print("the loss type is: ", type(loss))
         loss.backward()
+        print("snn.fc2.weight.grad: ", snn.fc2.weight.grad.max())
         optimizer.step()
         if (i+1)%100 == 0:
              print ('Epoch [%d/%d], Step [%d/%d], Loss: %.5f'
-                    %(epoch+1, num_epochs, i+1, len(train_dataset)//batch_size,running_loss ))
+                    %(epoch+1, args.num_epochs, i+1, len(train_dataset)//args.base_batch_size,running_loss ))
              running_loss = 0
              print('Time elasped:', time.time()-start_time)
     correct = 0
     total = 0
-    optimizer = lr_scheduler(optimizer, epoch, learning_rate, 40)
+    optimizer = lr_scheduler(optimizer, epoch, args.learning_rate, 40)
 
     with torch.no_grad():
         for batch_idx, (inputs, targets) in enumerate(test_loader):
             inputs = inputs.to(device)
             optimizer.zero_grad()
             outputs = snn(inputs)
-            labels_ = torch.zeros(batch_size, 10).scatter_(1, targets.view(-1, 1), 1)
+            labels_ = torch.zeros(args.base_batch_size, 10).scatter_(1, targets.view(-1, 1), 1)
             loss = criterion(outputs.cpu(), labels_)
             _, predicted = outputs.cpu().max(1)
             total += float(targets.size(0))
