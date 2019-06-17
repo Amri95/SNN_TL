@@ -21,7 +21,7 @@ def linear_CKA(X, Y):
     L = linear_kernel(Y)
     # L = L + torch.ones(L.size()).cuda() * 1e-3
     # print(HSIC(K, L))
-    return HSIC(K, L) / (torch.sqrt(HSIC(K, K) * HSIC(L, L)) + torch.tensor(1e-3).cuda())
+    return HSIC(K, L) / (torch.sqrt(HSIC(K, K) * HSIC(L, L)) + torch.tensor(1e-5).cuda())
 
 
 def RBF_CKA(X, Y):

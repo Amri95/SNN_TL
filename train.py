@@ -49,11 +49,13 @@ acc_record = list([])
 loss_train_record = list([])
 loss_test_record = list([])
 
-criterion = nn.MSELoss()
+criterion = nn.CrossEntropyLoss()  # nn.MSELoss()
 
 # 所设计的可用于mmd的loss合集
 criterion_dict = {"linear_CKA": CKA.linear_CKA,
-                  "KL": torch.nn.KLDivLoss()}
+                  "KL": torch.nn.KLDivLoss(),
+                  "MSE": torch.nn.MSELoss(),
+                  "Cross": torch.nn.CrossEntropyLoss()}
 mmd_criterion = criterion_dict[args.mmd_function]
 optimizer = torch.optim.RMSprop(snn.parameters(), lr=args.learning_rate)
 
@@ -191,16 +193,22 @@ def train_ddcnet(epoch, model, source_loader, target_loader):
             mmd_loss = 1 - torch.abs(mmd_criterion(source_feature, target_feature))
             # mmd_loss = 1 - torch.abs(mmd_criterion(source_feature.detach(), target_feature.detach()))
         else:
-            mmd_loss = torch.abs(mmd_criterion(source_feature.detach(), target_feature.detach()))
+            mmd_loss = torch.abs(mmd_criterion(source_feature, target_feature))
 
         # 将label从(batch_size, 1) 变为 (batch_size, num_classes)即one-hot，便于计算loss
         source_label_ = torch.zeros(batch_size, args.num_classes).cuda().scatter_(1, source_label.view(-1, 1), 1)
         _, predicted = source_preds.max(1)  # 返回的predicated为(batch_size, 1)直接得到值最大的类别的index，便于下面计算正确率
         correct += float(predicted.eq(source_label).sum().item())
 
-        clf_loss = criterion(source_preds, source_label_)  # 计算分类loss
+        clf_loss = criterion(source_preds, source_label.squeeze())
+        # clf_loss = criterion(source_preds, source_label_)  # 计算分类loss
 
-        loss = clf_loss + args.mmd_ratio * mmd_loss  # 合并分类loss和mmd loss
+        if epoch < 5:
+            loss = clf_loss
+        else:
+            loss = clf_loss + args.mmd_ratio * mmd_loss
+        # loss = clf_loss
+        # loss = clf_loss + args.mmd_ratio * mmd_loss  # 合并分类loss和mmd loss
         total_loss += clf_loss.item()  # 单纯累加所有分类loss的数值
 
         loss.backward()
@@ -214,6 +222,8 @@ def train_ddcnet(epoch, model, source_loader, target_loader):
 
     total_loss /= len(source_loader)
     acc_train = float(correct) * 100. / (len(source_loader) * batch_size)
+
+    # print("snn.fc2.weight.grad: ", snn.module.final_classifier_fc.weight.grad.max())
 
     print('{} set: Average classification loss: {:.4f}, Accuracy: {}/{} ({:.2f}%)'.format(
         args.SOURCE_NAME, total_loss, correct, len(source_loader) * batch_size, acc_train))
@@ -243,12 +253,13 @@ def test_ddcnet(model, target_loader):
         correct += float(predicted.eq(target).sum().item())
 
         target_ = torch.zeros(batch_size, args.num_classes).cuda().scatter_(1, target.view(-1, 1), 1)
-        test_loss += criterion(target_preds, target_)  # sum up batch loss
+        test_loss += criterion(target_preds, target.squeeze())  # criterion(target_preds, target_)  # sum up batch loss
 
     test_loss /= len(target_loader)
     print('{} set: Average classification loss: {:.4f}, Accuracy: {}/{} ({:.2f}%)'.format(
         args.TARGET_NAME, test_loss.item(), correct, len(target_loader) * batch_size,
         100. * correct / (len(target_loader) * batch_size)))
+    # print("target pred: ", torch.max(target_preds, dim=-1))
 
     return correct
 

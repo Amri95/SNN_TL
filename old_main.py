@@ -139,16 +139,16 @@ for epoch in range(args.num_epochs):
     print('Test Accuracy of the model on the 10000 test images: %.3f' % (100 * correct / total))
     acc = 100. * float(correct) / float(total)
     acc_record.append(acc)
-    if epoch % 5 == 0:
-        print(acc)
-        print('Saving..')
-        state = {
-            'net': snn.state_dict(),
-            'acc': acc,
-            'epoch': epoch,
-            'acc_record': acc_record,
-        }
-        if not os.path.isdir('checkpoint'):
-            os.mkdir('checkpoint')
-        torch.save(state, './checkpoint/ckpt' + names + '.t7')
-        best_acc = acc
+    # if epoch % 5 == 0:
+    #     print(acc)
+    #     print('Saving..')
+    #     state = {
+    #         'net': snn.state_dict(),
+    #         'acc': acc,
+    #         'epoch': epoch,
+    #         'acc_record': acc_record,
+    #     }
+    #     if not os.path.isdir('checkpoint'):
+    #         os.mkdir('checkpoint')
+    #     torch.save(state, './checkpoint/ckpt' + names + '.t7')
+    #     best_acc = acc

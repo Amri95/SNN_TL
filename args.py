@@ -8,22 +8,22 @@ def get_parser():
 
     # data path
     parser.add_argument('--ROOT_PATH', default='./data/Office31', type=str, help='the root path of data')
-    parser.add_argument('-S', '--SOURCE_NAME', default='amazon', type=str, help='the source data')
-    parser.add_argument('-T', '--TARGET_NAME', default='webcam', type=str, help='the target data')
+    parser.add_argument('-S', '--SOURCE_NAME', default='webcam', type=str, help='the source data')
+    parser.add_argument('-T', '--TARGET_NAME', default='dslr', type=str, help='the target data')
 
     # general
-    parser.add_argument('--base_batch_size', default=16, type=int, help='the batch size of each GPU')
+    parser.add_argument('--base_batch_size', default=20, type=int, help='the batch size of each GPU')
     parser.add_argument('--num_classes', default=31, type=int)
 
     # train
     parser.add_argument('--num_epochs', default=100, type=int, help='the number of epochs')
-    parser.add_argument('--learning_rate', default=1e-5, type=float, help='the learning rate of train')
+    parser.add_argument('--learning_rate', default=1e-4, type=float, help='the learning rate of train')
 
     # model
     parser.add_argument('--thresh', default=0.5, type=float, help='neuronal threshold')
     parser.add_argument('--lens', default=0.5, type=float, help='hyper-parameters of approximate function')
     parser.add_argument('--decay', default=0.5, type=float, help='decay constants')
-    parser.add_argument('--time_window', default=20, type=int, help='the time step of SNN')
+    parser.add_argument('--time_window', default=12, type=int, help='the time step of SNN')
 
     # laplace
     parser.add_argument('-M', '--is_mix', default=1, type=int, help='mix laplace or not')
@@ -32,7 +32,7 @@ def get_parser():
     parser.add_argument('--original_ratio', default=0.1, type=float, help='the ratio of original spike')
 
     # mmd loss
-    parser.add_argument('-F', '--mmd_function', default="KL", type=str, help='the loss function of mmd')
+    parser.add_argument('-F', '--mmd_function', default="linear_CKA", type=str, help='the loss function of mmd')
     parser.add_argument('-R', '--mmd_ratio', default=0.25, type=float, help='the ratio of mmd loss')
     parser.add_argument('-L', '--mmd_level', default=8, choices=[6, 7, 8], type=int,
                         help='the level of mmd loss in the structure')
