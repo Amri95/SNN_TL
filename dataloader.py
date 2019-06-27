@@ -170,7 +170,7 @@ def load_merge_training(root_path, source_directory, target_directory, batch_siz
     data = ImageFolder(source_root=os.path.join(root_path, source_directory, 'images'),
                        target_root=os.path.join(root_path, target_directory, 'images'),
                        transform=transform)
-    train_loader = torch.utils.data.DataLoader(data, batch_size=batch_size, shuffle=True, drop_last=False)
+    train_loader = torch.utils.data.DataLoader(data, batch_size=batch_size, shuffle=True, drop_last=True)
     return train_loader
 
 
