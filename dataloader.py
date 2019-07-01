@@ -2,6 +2,7 @@
 import os
 import yaml
 import torch
+import random
 
 from torchvision import datasets, transforms
 import torch.utils.data as data
@@ -54,7 +55,7 @@ class ImageFolder(DatasetFolder):
     """
 
     def __init__(self, source_root, target_root,
-                 extensions=None,
+                 extensions=None, train=True,
                  transform=None, target_transform=None,
                  loader=default_loader, is_valid_file=None):
         #         super(ImageFolder, self).__init__(self, source_root, target_root,
@@ -63,6 +64,7 @@ class ImageFolder(DatasetFolder):
         #                  loader=default_loader, is_valid_file=None)
         self.source_root = source_root
         self.target_root = target_root
+        self.train = train
         self.transform = transform
         self.target_transform = target_transform
         self.loader = loader
@@ -95,9 +97,12 @@ class ImageFolder(DatasetFolder):
         self.target_targets = [s[1] for s in target_samples]
 
         self.source_merge_imgs = []
-        self.target_merge_imgs = []
+        self.target_merge_imgs_train = []
+        self.target_merge_imgs_test = []
+
         self.source_merge_targets = []
-        self.target_merge_targets = []
+        self.target_merge_targets_train = []
+        self.target_merge_targets_test = []
 
         for i in self.source_class_to_idx.values():
 
@@ -108,18 +113,22 @@ class ImageFolder(DatasetFolder):
             target_start = self.target_targets.index(i)
             target_L = self.target_targets.count(i)
             target_idx = list(range(target_start, target_start + target_L))
+            random.shuffle(target_idx)
+            target_L = int(len(target_idx) / 2)
+            target_idx_train = target_idx[: target_L]
+            target_idx_test = target_idx[target_L:]
 
             if source_L > target_L:
                 times = int(source_L / target_L)
                 remainder = source_L % target_L
-                target_idx *= times
-                target_idx += target_idx[:remainder]
+                target_idx_train *= times
+                target_idx_train += target_idx_train[:remainder]
 
                 self.source_merge_imgs += [self.source_samples[x] for x in source_idx]
-                self.target_merge_imgs += [self.target_samples[x] for x in target_idx]
+                self.target_merge_imgs_train += [self.target_samples[x] for x in target_idx_train]
 
                 self.source_merge_targets += [self.source_targets[x] for x in source_idx]
-                self.target_merge_targets += [self.target_targets[x] for x in target_idx]
+                self.target_merge_targets_train += [self.target_targets[x] for x in target_idx_train]
             elif source_L < target_L:
                 times = int(target_L / source_L)
                 remainder = target_L % source_L
@@ -127,10 +136,13 @@ class ImageFolder(DatasetFolder):
                 source_idx += source_idx[:remainder]
 
                 self.source_merge_imgs += [self.source_samples[x] for x in source_idx]
-                self.target_merge_imgs += [self.target_samples[x] for x in target_idx]
+                self.target_merge_imgs_train += [self.target_samples[x] for x in target_idx_train]
 
                 self.source_merge_targets += [self.source_targets[x] for x in source_idx]
-                self.target_merge_targets += [self.target_targets[x] for x in target_idx]
+                self.target_merge_targets_train += [self.target_targets[x] for x in target_idx_train]
+
+            self.target_merge_imgs_test += [self.target_samples[x] for x in target_idx_test]
+            self.target_merge_targets_test += [self.target_targets[x] for x in target_idx_test]
 
     def __getitem__(self, index):
         """
@@ -139,26 +151,42 @@ class ImageFolder(DatasetFolder):
         Returns:
             tuple: (sample, target) where target is class_index of the target class.
         """
-        source_path, source_target = self.source_merge_imgs[index]
-        target_path, _ = self.target_merge_imgs[index]
+        if self.train:
+            source_path, source_target = self.source_merge_imgs[index]
+            target_path, _ = self.target_merge_imgs_train[index]
 
-        source_sample = self.loader(source_path)
-        target_sample = self.loader(target_path)
+            source_sample = self.loader(source_path)
+            target_sample = self.loader(target_path)
 
-        if self.transform is not None:
-            source_sample = self.transform(source_sample)
-            target_sample = self.transform(target_sample)
+            if self.transform is not None:
+                source_sample = self.transform(source_sample)
+                target_sample = self.transform(target_sample)
 
-        if self.target_transform is not None:
-            source_target = self.target_transform(source_target)
+            if self.target_transform is not None:
+                source_target = self.target_transform(source_target)
 
-        return source_sample, target_sample, source_target
+            return source_sample, target_sample, source_target
+
+        else:
+            target_path, target_target = self.target_merge_imgs_test[index]
+            target_sample = self.loader(target_path)
+
+            if self.transform is not None:
+                target_sample = self.transform(target_sample)
+
+            if self.target_transform is not None:
+                target_target = self.target_transform(target_target)
+
+            return target_sample, target_target
 
     def __len__(self):
-        return len(self.source_merge_imgs)
+        if self.train:
+            return len(self.target_merge_imgs_train)
+        else:
+            return len(self.target_merge_imgs_test)
 
 
-def load_merge_training(root_path, source_directory, target_directory, batch_size):
+def load_merge_training(root_path, source_directory, target_directory, batch_size, train=True):
     transform = transforms.Compose(
         [transforms.Resize([256, 256]),
          transforms.RandomCrop(227),
@@ -169,6 +197,7 @@ def load_merge_training(root_path, source_directory, target_directory, batch_siz
     )
     data = ImageFolder(source_root=os.path.join(root_path, source_directory, 'images'),
                        target_root=os.path.join(root_path, target_directory, 'images'),
+                       train=train,
                        transform=transform)
     train_loader = torch.utils.data.DataLoader(data, batch_size=batch_size, shuffle=True, drop_last=True)
     return train_loader

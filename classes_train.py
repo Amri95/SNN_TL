@@ -38,9 +38,10 @@ snn.to(device)
 batch_size = args.base_batch_size * device_num
 
 # data loader set
-train_loader = dataloader.load_merge_training(args.ROOT_PATH, args.SOURCE_NAME, args.TARGET_NAME, batch_size)
+train_loader = dataloader.load_merge_training(args.ROOT_PATH, args.SOURCE_NAME, args.TARGET_NAME, batch_size, train=True)
+test_loader = dataloader.load_merge_training(args.ROOT_PATH, args.SOURCE_NAME, args.TARGET_NAME, batch_size, train=False)
 # target_train_loader = dataloader.load_training(args.ROOT_PATH, args.TARGET_NAME, batch_size)
-target_test_loader = dataloader.load_testing(args.ROOT_PATH, args.TARGET_NAME, batch_size)
+# target_test_loader = dataloader.load_testing(args.ROOT_PATH, args.TARGET_NAME, batch_size)
 
 # train prepare
 best_acc = 0  # best test accuracy
@@ -236,7 +237,7 @@ def test_ddcnet(model, target_loader):
     test_loss = 0
     correct = 0
 
-    for data, target in target_test_loader:
+    for data, target in target_loader:
         data_lap = get_lap(data)  # > torch.ones((1, 227, 227), device=device) * 0.3
 
         if cuda:
@@ -264,7 +265,7 @@ if __name__ == '__main__':
         print('Train Epoch: ', epoch)
         train_ddcnet(epoch, snn, train_loader)
         with torch.no_grad():
-            correct = test_ddcnet(snn, target_test_loader)
+            correct = test_ddcnet(snn, test_loader)
             # acc_record.append(correct)
             # if epoch % 5 == 0:
             #     print(correct)
