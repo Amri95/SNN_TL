@@ -8,8 +8,8 @@ def get_parser():
 
     # data path
     parser.add_argument('--ROOT_PATH', default='./data/Office31', type=str, help='the root path of data')
-    parser.add_argument('-S', '--SOURCE_NAME', default='amazon', type=str, help='the source data')
-    parser.add_argument('-T', '--TARGET_NAME', default='webcam', type=str, help='the target data')
+    parser.add_argument('-S', '--SOURCE_NAME', default='webcam', type=str, help='the source data')
+    parser.add_argument('-T', '--TARGET_NAME', default='dslr', type=str, help='the target data')
 
     # general
     parser.add_argument('--base_batch_size', default=20, type=int, help='the batch size of each GPU')
@@ -17,7 +17,7 @@ def get_parser():
 
     # train
     parser.add_argument('--num_epochs', default=100, type=int, help='the number of epochs')
-    parser.add_argument('--learning_rate', default=6e-5, type=float, help='the learning rate of train')
+    parser.add_argument('--learning_rate', default=1e-4, type=float, help='the learning rate of train')
 
     # model
     parser.add_argument('--thresh', default=0.5, type=float, help='neuronal threshold')
