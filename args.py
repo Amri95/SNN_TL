@@ -32,7 +32,7 @@ def get_parser():
     parser.add_argument('--original_ratio', default=0.1, type=float, help='the ratio of original spike')
 
     # mmd loss
-    parser.add_argument('-F', '--mmd_function', default="linear_CKA", type=str, help='the loss function of mmd')
+    parser.add_argument('-F', '--mmd_function', default="KL", type=str, help='the loss function of mmd')
     parser.add_argument('-R', '--mmd_ratio', default=0.25, type=float, help='the ratio of mmd loss')
     parser.add_argument('-L', '--mmd_level', default=8, choices=[6, 7, 8], type=int,
                         help='the level of mmd loss in the structure')

@@ -12,7 +12,7 @@ parser = get_parser()
 args = parser.parse_args()
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
+# device = torch.device("cpu")
 
 #  mix the original spike and laplace spike
 def smooth(data, lap_data):

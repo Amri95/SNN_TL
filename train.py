@@ -26,6 +26,8 @@ args = parser.parse_args()
 
 # device set
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+# device = torch.device("cpu")
+
 cuda = torch.cuda.is_available()
 if cuda:  # 使用GPU的情况下，默认多GPU并行
     device_num = torch.cuda.device_count()
@@ -34,13 +36,19 @@ else:
     device_num = 1
     snn = SDDC()
 
+# device_num = 1
+# snn = SDDC()
+
 snn.to(device)
 batch_size = args.base_batch_size * device_num
 
 # data loader set
 source_loader = dataloader.load_training(args.ROOT_PATH, args.SOURCE_NAME, batch_size)
-target_train_loader = dataloader.load_training(args.ROOT_PATH, args.TARGET_NAME, batch_size)
-target_test_loader = dataloader.load_testing(args.ROOT_PATH, args.TARGET_NAME, batch_size)
+
+# target_train_loader = dataloader.load_training(args.ROOT_PATH, args.TARGET_NAME, batch_size)
+# target_test_loader = dataloader.load_testing(args.ROOT_PATH, args.TARGET_NAME, batch_size)
+
+target_train_loader, target_test_loader = dataloader.load_data(args.ROOT_PATH, args.TARGET_NAME, batch_size)
 
 # train prepare
 best_acc = 0  # best test accuracy
@@ -155,9 +163,6 @@ def train_ddcnet(epoch, model, source_loader, target_loader):
     """
     log_interval = 10
 
-    # enter training mode
-    model.train()
-
     iter_source = iter(source_loader)
     iter_target = iter(target_loader)
     num_iter = len(source_loader)
@@ -165,17 +170,80 @@ def train_ddcnet(epoch, model, source_loader, target_loader):
     correct = 0
     total_loss = 0
 
+    ii = 0
     for i in range(num_iter):
         source_data, source_label = iter_source.next()
-        target_data, _ = iter_target.next()
+        target_data, target_label = iter_target.next()
+        ii += 1
+        # print("source_label: ", source_label)
+        # print("target_label: ", target_label)
+
+        # 根据label匹配源数据与目标数据
+        label_size = source_label.size()[0]
+
+        target_data_numpy = target_data.numpy()
+
+        new_target_data = []
+        target_index = 0
+        source_not_found = []
+
+        for k in source_label:
+            not_found_flag = True
+            for j in range(label_size):
+                if (k.equal(target_label[target_index])):
+                    new_target_data.append(target_data_numpy[target_index])
+                    target_index += 1
+                    target_index = target_index % label_size
+                    not_found_flag = False
+                    break
+                target_index += 1
+                target_index = target_index % label_size
+            if (not_found_flag):
+                source_not_found.append(k)
+
+
+        while len(source_not_found) > 0:
+            # 若target数据不够，则重新循环添加
+            if (ii + 1) % len(target_loader) == 0:
+                iter_target = iter(target_loader)
+                ii = 0
+
+            target_data, target_label = iter_target.next()
+            ii += 1
+
+            target_data_numpy = target_data.numpy()
+            target_index = 0
+
+            source_not_found_index = []
+            for k in source_not_found:
+                not_found_flag = True
+                for j in range(label_size):
+                    if (k.equal(target_label[target_index])):
+                        new_target_data.append(target_data_numpy[target_index])
+                        target_index += 1
+                        target_index = target_index % label_size
+                        not_found_flag = False
+                        break
+                    target_index += 1
+                    target_index = target_index % label_size
+
+                if(not_found_flag):
+                    source_not_found_index.append(k)
+
+            source_not_found = source_not_found_index[:]
+
+        target_data = torch.tensor(target_data_numpy)
+        # end 根据label匹配源数据与目标数据
 
         # 得到拉普拉斯边缘
         source_lap = get_lap(source_data)
         target_lap = get_lap(target_data)
 
         # 若target数据不够，则重新循环添加
-        if (i + 1) % len(target_loader) == 0:
+        if (ii + 1) % len(target_loader) == 0:
             iter_target = iter(target_loader)
+            ii = 0
+
         if cuda:
             source_data, source_lap, source_label = source_data.cuda(), source_lap.cuda(), source_label.cuda()
             target_data, target_lap = target_data.cuda(), target_lap.cuda()
@@ -183,6 +251,8 @@ def train_ddcnet(epoch, model, source_loader, target_loader):
         # source_data, source_lap, source_label = Variable(source_data), Variable(source_lap), Variable(source_label)
         # target_data, target_lap = Variable(target_data), Variable(target_lap)
 
+        # enter training mode
+        model.train()
         model.zero_grad()
         optimizer.zero_grad()
 

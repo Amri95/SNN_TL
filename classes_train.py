@@ -284,17 +284,4 @@ if __name__ == '__main__':
         train_ddcnet(epoch, snn, train_loader)
         with torch.no_grad():
             correct = test_ddcnet(snn, test_loader)
-            # acc_record.append(correct)
-            # if epoch % 5 == 0:
-            #     print(correct)
-            #     print('Saving..')
-            #     state = {
-            #         'net': snn.state_dict(),
-            #         'acc': correct,
-            #         'epoch': epoch,
-            #         'acc_record': acc_record,
-            #     }
-            #     if not os.path.isdir('checkpoint'):
-            #         os.mkdir('checkpoint')
-            #     torch.save(state, './checkpoint/ckpt' + args.names + '.t7')
-            #     best_acc = correct
+
