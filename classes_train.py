@@ -169,10 +169,10 @@ def train_ddcnet(epoch, model, train_loader):
     :return:
     """
     log_interval = 10
-    LEARNING_RATE = step_decay(epoch, args.learning_rate)
-    print(f'Learning Rate: {LEARNING_RATE}')
-    # optimizer = torch.optim.Adam(snn.parameters(), lr=LEARNING_RATE)
-    optimizer = torch.optim.RMSprop(snn.parameters(), lr=LEARNING_RATE)
+    # LEARNING_RATE = step_decay(epoch, args.learning_rate)
+    # print(f'Learning Rate: {LEARNING_RATE}')
+    # # optimizer = torch.optim.Adam(snn.parameters(), lr=LEARNING_RATE)
+    # optimizer = torch.optim.RMSprop(snn.parameters(), lr=LEARNING_RATE)
 
     # enter training mode
     model.train()
